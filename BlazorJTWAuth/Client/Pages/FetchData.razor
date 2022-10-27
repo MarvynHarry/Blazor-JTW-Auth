@@ -1,0 +1,117 @@
+﻿@page "/fetchdata"
+@using BlazorExample.Shared
+@inject HttpClient Http
+@inject IJSRuntime jsr
+
+<UserComponent></UserComponent>
+
+<h1>Weather forecast</h1>
+
+<p>This component demonstrates fetching data from the server.</p>
+@if (string.IsNullOrEmpty(userdata))
+{
+	<p><a href="/login">LOGIN TO ACCESS THIS DATA</a></p>
+}
+else 
+{
+	if (forecasts == null)
+	{
+		<p><em>Loading...</em></p>
+	}
+	else
+	{
+		<p><a href="javascript:;" @onclick="GetTodaysForecast">TODAY'S FORECAST</a></p>
+		<table class="table">
+			<thead>
+				<tr>
+					<th>Date</th>
+					<th>Temp. (C)</th>
+					<th>Temp. (F)</th>
+					<th>Summary</th>
+					<th>User</th>
+				</tr>
+			</thead>
+			<tbody>
+				@foreach (var forecast in forecasts)
+				{
+					<tr>
+						<td>@forecast.Date.ToShortDateString()</td>
+						<td>@forecast.TemperatureC</td>
+						<td>@forecast.TemperatureF</td>
+						<td>@forecast.Summary</td>
+						<td>@forecast.UserName</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	}
+}
+
+@code {
+
+	private List<WeatherForecast> forecasts;
+	string userdata;
+
+	private async Task<string> GetJWT()
+	{
+		userdata = await jsr.InvokeAsync<string>("localStorage.getItem", "user").ConfigureAwait(false);
+		if (!string.IsNullOrWhiteSpace(userdata))
+		{
+			var dataArray = userdata.Split(';', 2);
+			if (dataArray.Length == 2)
+				return dataArray[1];
+		}
+		return null;
+	}
+
+	private async Task GetTodaysForecast()
+	{
+		try
+		{
+			var requestMsg = new HttpRequestMessage(HttpMethod.Get, $"/api/weatherforecast/{DateTime.Now.ToString("yyyy-MM-dd")}");
+			requestMsg.Headers.Add("Authorization", "Bearer " + await GetJWT());
+			var response = await Http.SendAsync(requestMsg);
+			if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized) // NOTE: THEN TOKEN HAS EXPIRED
+			{
+				await jsr.InvokeVoidAsync("localStorage.removeItem", "user").ConfigureAwait(false);
+				userdata = null;
+			}
+			else if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+				forecasts = null;
+			else if (response.IsSuccessStatusCode)
+			{
+				var forecast = await response.Content.ReadFromJsonAsync<WeatherForecast>();
+				forecasts.Clear();
+				forecasts.Add(forecast);
+			}
+		}
+		catch (Exception ex)
+		{
+
+		}
+	}
+
+	protected override async Task OnInitializedAsync()
+	{
+		await base.OnInitializedAsync();
+		try
+		{
+			var requestMsg = new HttpRequestMessage(HttpMethod.Get, "/api/weatherforecast");
+			requestMsg.Headers.Add("Authorization", "Bearer " + await GetJWT());
+			var response = await Http.SendAsync(requestMsg);
+			if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized) // NOTE: THEN TOKEN HAS EXPIRED
+			{
+				await jsr.InvokeVoidAsync("localStorage.removeItem", "user").ConfigureAwait(false);
+				userdata = null;
+			}
+			else if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+				forecasts = null;
+			else if (response.IsSuccessStatusCode)
+				forecasts = await response.Content.ReadFromJsonAsync<List<WeatherForecast>>();
+		}
+		catch (Exception ex)
+		{
+
+		}
+	}
+}
